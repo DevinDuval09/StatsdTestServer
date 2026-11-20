@@ -11,7 +11,7 @@ func ParseLine(line string) []string {
 	Split a statsd text line into the stat name, value, tag, sampling rate, tag, etc
 	**/
 	isStatsdDelimiter := func(c rune) bool {
-		return c == ":" || c == "|" || c == "@"
+		return string(c) == ":" || string(c) == "|" || string(c) == "@"
 	}
 
 	return strings.FieldsFunc(line, isStatsdDelimiter)
@@ -26,5 +26,5 @@ func SplitStat(line string) (string, float64, string) {
 	if err != nil {
 		log.Fatalf("Error parsing numerical value: %v", err)
 	}
-	return values[0], values[1], values[2]
+	return values[0], number, values[2]
 }
