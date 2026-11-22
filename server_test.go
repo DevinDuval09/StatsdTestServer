@@ -12,7 +12,7 @@ func TestStatPacketHandler(t *testing.T) {
 		Expect map[string]StatsTypes
 	}{
 		{"counter:1|c\n", map[string]StatsTypes{"counter": StatsTypes{Count: 1, Type: "c"}}},
-		{"counter:6|c\nnosample_gauge:0.55|g\n", map[string]StatsTypes{"counter": StatsTypes{Count: 7, Type: "c"}, "nosample_gauge": StatsTypes{Count: 1, Type: "g"}}},
+		{"counter:6|c\r\nnosample_gauge:0.55|g\r\n", map[string]StatsTypes{"counter": StatsTypes{Count: 7, Type: "c"}, "nosample_gauge": StatsTypes{Count: 1, Type: "g"}}},
 		{"new_counter: 4|c\nnosample_gauge:4.3|g\nsample_gauge:.66|g|@2.0\n", map[string]StatsTypes{"sample_gauge": StatsTypes{Count: 1, Type: "g"}, "counter": StatsTypes{Count: 7, Type: "c"}, "new_counter": StatsTypes{Count: 4, Type: "c"}, "nosample_gauge": StatsTypes{Count: 2, Type: "g"}}},
 		{"sample_timer_tag:156|ms|@4.0|tag\n", map[string]StatsTypes{"sample_gauge": StatsTypes{Count: 1, Type: "g"}, "counter": StatsTypes{Count: 7, Type: "c"}, "new_counter": StatsTypes{Count: 4, Type: "c"}, "nosample_gauge": StatsTypes{Count: 2, Type: "g"}, "sample_timer_tag": StatsTypes{Count: 1, Type: "ms"}}},
 	}
@@ -25,7 +25,7 @@ func TestStatPacketHandler(t *testing.T) {
 		//check testmap
 		for k, st := range test.Expect {
 			actual, ok := testmap.Load(k)
-			stat, success := actual.(StatsTypes)
+			stat, success := actual.(*StatsTypes)
 			if !success {
 				t.Errorf("None StatsTypes loaded into map")
 				continue
