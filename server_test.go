@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"strings"
 	"sync"
 	"testing"
@@ -42,4 +43,47 @@ func TestStatPacketHandler(t *testing.T) {
 			}
 		}
 	}
+}
+
+func TestStatSyncToJson(t *testing.T) {
+	testmap := &sync.Map{}
+
+	var counterStat StatsTypes = StatsTypes{Count: 39, Type: "c"}
+	var gaugeStat StatsTypes = StatsTypes{Count: 6, Type: "g"}
+	var timerStat StatsTypes = StatsTypes{Count: 3, Type: "ms"}
+
+	testmap.Store("counter", &counterStat)
+	testmap.Store("gauge", &gaugeStat)
+	testmap.Store("timer", &timerStat)
+
+	var expected = make(map[string]StatsTypes)
+	expected["counter"] = counterStat
+	expected["gauge"] = gaugeStat
+	expected["timer"] = timerStat
+
+	marshalled, err := statsSyncMapToJson(testmap)
+	if err != nil {
+		t.Errorf("Failed to marshal map")
+	}
+	var actual map[string]StatsTypes
+
+	err = json.Unmarshal(marshalled, &actual)
+	if err != nil {
+		t.Errorf("Failed to unmarshal bytes")
+	}
+
+	for k, ev := range expected {
+		av, ok := actual[k]
+		if !ok {
+			t.Errorf("Missing key %v from actual", k)
+			continue
+		}
+		if av.Type != ev.Type {
+			t.Errorf("Got av type %s wanted %s for %s", av.Type, ev.Type, k)
+		}
+		if av.Count != ev.Count {
+			t.Errorf("Got count %d wanted %d for %s", av.Count, ev.Count, k)
+		}
+	}
+
 }
