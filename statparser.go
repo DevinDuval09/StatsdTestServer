@@ -22,7 +22,8 @@ func SplitStat(line string) (string, float64, string) {
 	Split a text statsd line into the name, number value, and statsd tag
 	**/
 	values := ParseLine(line)
-	number, err := strconv.ParseFloat(values[1], 64)
+	cleaned := strings.TrimSpace(values[1])
+	number, err := strconv.ParseFloat(cleaned, 64)
 	if err != nil {
 		log.Fatalf("Error parsing numerical value: %v", err)
 	}
