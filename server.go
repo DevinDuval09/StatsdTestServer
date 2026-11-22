@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log"
@@ -11,8 +12,27 @@ import (
 )
 
 type StatsTypes struct {
-	Type  string
-	Count int
+	Type  string `json:"type"`
+	Count int    `json:"count"`
+}
+
+func statsSyncMapToJson(sm *sync.Map) ([]byte, error) {
+	m := make(map[string]StatsTypes)
+
+	sm.Range(func(key, value any) bool {
+		strKey, ok := key.(string)
+		if !ok {
+			strKey = fmt.Sprint(key)
+		}
+		val, success := value.(*StatsTypes)
+		if !success {
+			log.Fatalf("Failed to convert value to StatsTypes while converting to json.")
+		}
+		m[strKey] = StatsTypes{Count: val.Count, Type: val.Type}
+
+		return true
+	})
+	return json.Marshal(m)
 }
 
 func StatPacketHandler(packet io.Reader, stats *sync.Map) {
@@ -89,6 +109,52 @@ func StatsListener(host string, port int, stats *sync.Map) {
 
 		//packet -> individual lines -> process -> counters
 		go StatPacketHandler(reader, stats)
+
+	}
+}
+
+func CommandListener(host string, port int, stats *sync.Map) {
+	listenAddr := net.JoinHostPort(host, fmt.Sprintf("%d", port))
+
+	udpAddr, err := net.ResolveUDPAddr("udp", listenAddr)
+	if err != nil {
+		log.Fatalf("Error resolving listener: %v", err)
+	}
+
+	conn, err := net.ListenUDP("udp", udpAddr)
+	if err != nil {
+		log.Fatalf("Error listening: %v", err)
+	}
+
+	defer conn.Close()
+
+	log.Printf("Listening for commands on %s", conn.LocalAddr().String())
+
+	buffer := make([]byte, 1024)
+	for {
+		//accept connection
+		sizeRead, _, err := conn.ReadFromUDP(buffer)
+		if err != nil {
+			log.Printf("Error parsing packet: %v", err)
+			continue
+		}
+		//dump buffer into reader
+		reader := bytes.NewReader(buffer[:sizeRead])
+		var builder strings.Builder
+		_, err = io.Copy(&builder, reader)
+		if err != nil {
+			log.Printf("Error copying packet: %v", err)
+			continue
+		}
+
+		command := builder.String()
+		log.Printf("%s", command)
+		//convert buffer to string
+
+		//switch on command
+		//peek -> send json of current stats
+		//get -> send json of current stats and reset
+		//reset -> don't send, only reset stats
 
 	}
 }
