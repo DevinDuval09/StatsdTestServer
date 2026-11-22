@@ -133,7 +133,7 @@ func CommandListener(host string, port int, stats *sync.Map) {
 	buffer := make([]byte, 1024)
 	for {
 		//accept connection
-		sizeRead, _, err := conn.ReadFromUDP(buffer)
+		sizeRead, clientAddr, err := conn.ReadFromUDP(buffer)
 		if err != nil {
 			log.Printf("Error parsing packet: %v", err)
 			continue
@@ -147,14 +147,46 @@ func CommandListener(host string, port int, stats *sync.Map) {
 			continue
 		}
 
-		command := builder.String()
-		log.Printf("%s", command)
 		//convert buffer to string
+		command := builder.String()
 
 		//switch on command
+		switch command {
 		//peek -> send json of current stats
-		//get -> send json of current stats and reset
-		//reset -> don't send, only reset stats
+		case "peek":
+			resp, err := statsSyncMapToJson(stats)
+			if err != nil {
+				log.Printf("Error creating json of stats: %v", err)
+				continue
+			}
+			_, err := conn.WriteToUdp(resp, clientAddr)
+			//get -> send json of current stats and reset
+		case "get":
+			resp, err := statsSyncMapToJson(stats)
+			if err != nil {
+				log.Printf("Error creating json of stats: %v", err)
+				continue
+			}
+			_, err := conn.WriteToUdp(resp, clientAddr)
+			if err != nil {
+				log.Printf("Error sending stats: %v", err)
+				continue
+			}
+			stats.Clear()
+		case "reset":
+			//reset -> don't send, only reset stats
+			stats.Clear()
+			_, err := conn.WriteToUdp([]byte("stats cleared"), clientAddr)
+			if err != nil {
+				log.Printf("Error sending clear confirmation: %v", err)
+				continue
+			}
+		default:
+			_, err := conn.WriteToUdp([]byte("only support commands peek, get, and reset"), clientAddr)
+			if err != nil {
+				log.Printf("Error sending error notification")
+			}
+		}
 
 	}
 }
