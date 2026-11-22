@@ -31,29 +31,28 @@ func StatPacketHandler(packet io.Reader, stats *sync.Map) {
 	for line := range strings.Lines(converted) {
 		name, value, statType := SplitStat(line)
 		current, ok := stats.Load(name)
-
 		switch statType {
 		case "c":
 			if ok {
-				stat, success := current.(StatsTypes)
+				stat, success := current.(*StatsTypes)
 				if !success {
 					log.Printf("Failed to cast StatsTypes")
 					continue
 				}
 				stat.Count += int(value)
 			} else {
-				stats.Store(name, StatsTypes{Count: int(value), Type: statType})
+				stats.Store(name, &StatsTypes{Count: int(value), Type: statType})
 			}
 		default:
 			if ok {
-				stat, success := current.(StatsTypes)
+				stat, success := current.(*StatsTypes)
 				if !success {
 					log.Printf("Failed to cast StatsTypes")
 					continue
 				}
 				stat.Count += 1
 			} else {
-				stats.Store(name, StatsTypes{Count: 1, Type: statType})
+				stats.Store(name, &StatsTypes{Count: 1, Type: statType})
 			}
 		}
 	}
