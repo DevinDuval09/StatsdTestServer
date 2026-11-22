@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -79,7 +80,7 @@ func StatPacketHandler(packet io.Reader, stats *sync.Map) {
 
 }
 
-func StatsListener(host string, port int, stats *sync.Map) {
+func StatsListener(host string, port int, stats *sync.Map, ctx context.Context) {
 	listenAddr := net.JoinHostPort(host, fmt.Sprintf("%d", port))
 
 	udpAddr, err := net.ResolveUDPAddr("udp", listenAddr)
@@ -94,6 +95,11 @@ func StatsListener(host string, port int, stats *sync.Map) {
 
 	defer conn.Close()
 
+	stop := context.AfterFunct(ctx, func() {
+		conn.Close()
+	})
+	defer stop()
+
 	log.Printf("Listening on %s", conn.LocalAddr().String())
 
 	buffer := make([]byte, 1024)
@@ -101,6 +107,10 @@ func StatsListener(host string, port int, stats *sync.Map) {
 		//accept connection
 		sizeRead, _, err := conn.ReadFromUDP(buffer)
 		if err != nil {
+			if error.Is(err, net.ErrClosed) {
+				log.Printf("Stoping CommandListener")
+				return nil
+			}
 			log.Printf("Error parsing packet: %v", err)
 			continue
 		}
@@ -113,7 +123,7 @@ func StatsListener(host string, port int, stats *sync.Map) {
 	}
 }
 
-func CommandListener(host string, port int, stats *sync.Map) {
+func CommandListener(host string, port int, stats *sync.Map, ctx context.Context) {
 	listenAddr := net.JoinHostPort(host, fmt.Sprintf("%d", port))
 
 	udpAddr, err := net.ResolveUDPAddr("udp", listenAddr)
@@ -128,6 +138,11 @@ func CommandListener(host string, port int, stats *sync.Map) {
 
 	defer conn.Close()
 
+	stop := context.AfterFunct(ctx, func() {
+		conn.Close()
+	})
+	defer stop()
+
 	log.Printf("Listening for commands on %s", conn.LocalAddr().String())
 
 	buffer := make([]byte, 1024)
@@ -135,6 +150,10 @@ func CommandListener(host string, port int, stats *sync.Map) {
 		//accept connection
 		sizeRead, clientAddr, err := conn.ReadFromUDP(buffer)
 		if err != nil {
+			if error.Is(err, net.ErrClosed) {
+				log.Printf("Stoping CommandListener")
+				return nil
+			}
 			log.Printf("Error parsing packet: %v", err)
 			continue
 		}
