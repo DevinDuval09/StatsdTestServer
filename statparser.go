@@ -27,5 +27,5 @@ func SplitStat(line string) (string, float64, string) {
 	if err != nil {
 		log.Fatalf("Error parsing numerical value: %v", err)
 	}
-	return values[0], number, values[2]
+	return strings.TrimSpace(values[0]), number, strings.TrimSpace(values[2])
 }
