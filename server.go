@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -95,7 +96,7 @@ func StatsListener(host string, port int, stats *sync.Map, ctx context.Context) 
 
 	defer conn.Close()
 
-	stop := context.AfterFunct(ctx, func() {
+	stop := context.AfterFunc(ctx, func() {
 		conn.Close()
 	})
 	defer stop()
@@ -107,9 +108,9 @@ func StatsListener(host string, port int, stats *sync.Map, ctx context.Context) 
 		//accept connection
 		sizeRead, _, err := conn.ReadFromUDP(buffer)
 		if err != nil {
-			if error.Is(err, net.ErrClosed) {
+			if errors.Is(err, net.ErrClosed) {
 				log.Printf("Stoping CommandListener")
-				return nil
+				return
 			}
 			log.Printf("Error parsing packet: %v", err)
 			continue
@@ -138,7 +139,7 @@ func CommandListener(host string, port int, stats *sync.Map, ctx context.Context
 
 	defer conn.Close()
 
-	stop := context.AfterFunct(ctx, func() {
+	stop := context.AfterFunc(ctx, func() {
 		conn.Close()
 	})
 	defer stop()
@@ -150,9 +151,9 @@ func CommandListener(host string, port int, stats *sync.Map, ctx context.Context
 		//accept connection
 		sizeRead, clientAddr, err := conn.ReadFromUDP(buffer)
 		if err != nil {
-			if error.Is(err, net.ErrClosed) {
+			if errors.Is(err, net.ErrClosed) {
 				log.Printf("Stoping CommandListener")
-				return nil
+				return
 			}
 			log.Printf("Error parsing packet: %v", err)
 			continue
@@ -178,7 +179,7 @@ func CommandListener(host string, port int, stats *sync.Map, ctx context.Context
 				log.Printf("Error creating json of stats: %v", err)
 				continue
 			}
-			_, err := conn.WriteToUdp(resp, clientAddr)
+			_, err = conn.WriteTo(resp, clientAddr)
 			//get -> send json of current stats and reset
 		case "get":
 			resp, err := statsSyncMapToJson(stats)
@@ -186,7 +187,7 @@ func CommandListener(host string, port int, stats *sync.Map, ctx context.Context
 				log.Printf("Error creating json of stats: %v", err)
 				continue
 			}
-			_, err := conn.WriteToUdp(resp, clientAddr)
+			_, err = conn.WriteTo(resp, clientAddr)
 			if err != nil {
 				log.Printf("Error sending stats: %v", err)
 				continue
@@ -195,13 +196,13 @@ func CommandListener(host string, port int, stats *sync.Map, ctx context.Context
 		case "reset":
 			//reset -> don't send, only reset stats
 			stats.Clear()
-			_, err := conn.WriteToUdp([]byte("stats cleared"), clientAddr)
+			_, err := conn.WriteTo([]byte("stats cleared"), clientAddr)
 			if err != nil {
 				log.Printf("Error sending clear confirmation: %v", err)
 				continue
 			}
 		default:
-			_, err := conn.WriteToUdp([]byte("only support commands peek, get, and reset"), clientAddr)
+			_, err := conn.WriteTo([]byte("only support commands peek, get, and reset"), clientAddr)
 			if err != nil {
 				log.Printf("Error sending error notification")
 			}
