@@ -15,10 +15,19 @@ import (
 )
 
 func syncMapIsEmpty(m *sync.Map) bool {
+	var empty bool = true
 	m.Range(func(key, value any) bool {
+		val, ok := value.(*StatsTypes)
+		if !ok {
+			return true
+		}
+		if val.Count == 0 {
+			return true
+		}
+		empty = false
 		return false // stop iteration immediately
 	})
-	return true
+	return empty
 }
 
 func commandClient(host string, port int, command string) ([]byte, error) {
@@ -49,6 +58,26 @@ func commandClient(host string, port int, command string) ([]byte, error) {
 	}
 
 	return buffer[:n], nil
+
+}
+
+func statClient(host string, port int, stats string) error {
+	serverAddr, err := net.ResolveUDPAddr("udp", fmt.Sprintf("%s:%d", host, port))
+	if err != nil {
+		return err
+	}
+
+	conn, err := net.DialUDP("udp", nil, serverAddr)
+	if err != nil {
+		return err
+	}
+
+	_, err = conn.Write([]byte(stats))
+
+	if err != nil {
+		return err
+	}
+	return nil
 
 }
 
@@ -133,9 +162,9 @@ func TestStatSyncToJson(t *testing.T) {
 
 }
 
-func TestPeekCommandListener(t *testing.T) {
+func TestGetCommandListener(t *testing.T) {
 
-	var configs = Configs{CommandHost: "127.0.0.1", CommandPort: 50000}
+	var configs = Configs{CommandHost: "127.0.0.1", CommandPort: 20000}
 
 	testmap := &sync.Map{}
 
@@ -185,6 +214,99 @@ func TestPeekCommandListener(t *testing.T) {
 
 	if !syncMapIsEmpty(testmap) {
 		t.Errorf("Stats map didn't clear")
+	}
+
+}
+
+func TestIntegrated(t *testing.T) {
+
+	var configs = Configs{CommandHost: "127.0.0.1", CommandPort: 9000, StatsHost: "127.0.0.1", StatsPort: 10000}
+
+	integratedmap := &sync.Map{}
+
+	var counterStat StatsTypes = StatsTypes{Count: 39, Type: "c"}
+	var gaugeStat StatsTypes = StatsTypes{Count: 6, Type: "g"}
+	var timerStat StatsTypes = StatsTypes{Count: 3, Type: "ms"}
+
+	//testmap.Store("counter", &counterStat)
+	//testmap.Store("gauge", &gaugeStat)
+	//testmap.Store("timer", &timerStat)
+	//testmap.Store("emptycounter", &emptycounterStat)
+
+	var expected = make(map[string]StatsTypes)
+	expected["counter"] = counterStat
+	expected["gauge"] = gaugeStat
+	expected["timer"] = timerStat
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM, syscall.SIGQUIT, syscall.SIGKILL)
+	defer stop()
+
+	go CommandListener(configs.CommandHost, configs.CommandPort, integratedmap, ctx)
+	go StatsListener(configs.StatsHost, configs.StatsPort, integratedmap, ctx)
+	time.Sleep(1 * time.Second)
+
+	//send packets
+	err := statClient(configs.StatsHost, configs.StatsPort, "counter:39|c\nemptycounter:0|c\ngauge:.53|g\ntimer:150|ms\n")
+	if err != nil {
+		t.Errorf("Error sending first packet: %v", err)
+		return
+	}
+	err = statClient(configs.StatsHost, configs.StatsPort, "gauge:.53|g\r\ntimer:150|ms\r\ngauge:.66|g\r\ngauge:.95|g\r\ngauge:1.99|g\r\n")
+	if err != nil {
+		t.Errorf("Error sending second packet: %v", err)
+		return
+	}
+
+	err = statClient(configs.StatsHost, configs.StatsPort, "gauge:.53|g\r\ntimer:150|ms\r\n")
+	if err != nil {
+		t.Errorf("Error sending third packet: %v", err)
+		return
+	}
+
+	packet, err := commandClient(configs.CommandHost, configs.CommandPort, "peek")
+
+	if err != nil {
+		t.Errorf("Error retrieving stats: %v", err)
+	}
+	var actual map[string]StatsTypes
+
+	err = json.Unmarshal(packet, &actual)
+	if err != nil {
+		t.Errorf("Failed to unmarshal bytes")
+	}
+
+	for k, ev := range expected {
+		av, ok := actual[k]
+		if !ok {
+			t.Errorf("Missing key %v from actual (%v)", k, actual)
+			continue
+		}
+		if av.Type != ev.Type {
+			t.Errorf("Got av type %s wanted %s for %s", av.Type, ev.Type, k)
+		}
+		if av.Count != ev.Count {
+			t.Errorf("Got count %d wanted %d for %s", av.Count, ev.Count, k)
+		}
+	}
+
+	_, ok := actual["emptycounter"]
+
+	if ok {
+		t.Errorf("Got a value for emptycounter")
+	}
+
+	if syncMapIsEmpty(integratedmap) {
+		t.Errorf("Stats map cleared from peek: %v", integratedmap)
+	}
+
+	time.Sleep(500 * time.Millisecond)
+
+	_, err = commandClient(configs.CommandHost, configs.CommandPort, "reset")
+
+	time.Sleep(1 * time.Second)
+
+	if !syncMapIsEmpty(integratedmap) {
+		t.Errorf("Stats map failed to clear from reset")
 	}
 
 }
