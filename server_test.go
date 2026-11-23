@@ -1,11 +1,56 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
+	"net"
+	"os"
+	"os/signal"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
+	"time"
 )
+
+func syncMapIsEmpty(m *sync.Map) bool {
+	m.Range(func(key, value any) bool {
+		return false // stop iteration immediately
+	})
+	return true
+}
+
+func commandClient(host string, port int, command string) ([]byte, error) {
+	serverAddr, err := net.ResolveUDPAddr("udp", fmt.Sprintf("%s:%d", host, port))
+	if err != nil {
+		return []byte{}, err
+	}
+
+	conn, err := net.DialUDP("udp", nil, serverAddr)
+	if err != nil {
+		return []byte{}, err
+	}
+
+	buffer := make([]byte, 1024)
+
+	conn.SetReadDeadline(time.Now().Add(4 * time.Second))
+
+	_, err = conn.Write([]byte(command))
+
+	if err != nil {
+		return []byte{}, err
+	}
+
+	n, _, err := conn.ReadFromUDP(buffer)
+
+	if err != nil {
+		return []byte{}, err
+	}
+
+	return buffer[:n], nil
+
+}
 
 func TestStatPacketHandler(t *testing.T) {
 	var tests = []struct {
@@ -84,6 +129,62 @@ func TestStatSyncToJson(t *testing.T) {
 		if av.Count != ev.Count {
 			t.Errorf("Got count %d wanted %d for %s", av.Count, ev.Count, k)
 		}
+	}
+
+}
+
+func TestPeekCommandListener(t *testing.T) {
+
+	var configs = Configs{CommandHost: "127.0.0.1", CommandPort: 50000}
+
+	testmap := &sync.Map{}
+
+	var counterStat StatsTypes = StatsTypes{Count: 39, Type: "c"}
+	var gaugeStat StatsTypes = StatsTypes{Count: 6, Type: "g"}
+	var timerStat StatsTypes = StatsTypes{Count: 3, Type: "ms"}
+
+	testmap.Store("counter", &counterStat)
+	testmap.Store("gauge", &gaugeStat)
+	testmap.Store("timer", &timerStat)
+
+	var expected = make(map[string]StatsTypes)
+	expected["counter"] = counterStat
+	expected["gauge"] = gaugeStat
+	expected["timer"] = timerStat
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM, syscall.SIGQUIT, syscall.SIGKILL)
+	defer stop()
+
+	go CommandListener(configs.CommandHost, configs.CommandPort, testmap, ctx)
+
+	packet, err := commandClient(configs.CommandHost, configs.CommandPort, "get")
+
+	if err != nil {
+		t.Errorf("Error retrieving stats: %v", err)
+	}
+	var actual map[string]StatsTypes
+
+	err = json.Unmarshal(packet, &actual)
+	if err != nil {
+		t.Errorf("Failed to unmarshal bytes")
+	}
+
+	for k, ev := range expected {
+		av, ok := actual[k]
+		if !ok {
+			t.Errorf("Missing key %v from actual", k)
+			continue
+		}
+		if av.Type != ev.Type {
+			t.Errorf("Got av type %s wanted %s for %s", av.Type, ev.Type, k)
+		}
+		if av.Count != ev.Count {
+			t.Errorf("Got count %d wanted %d for %s", av.Count, ev.Count, k)
+		}
+	}
+
+	if !syncMapIsEmpty(testmap) {
+		t.Errorf("Stats map didn't clear")
 	}
 
 }
