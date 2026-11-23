@@ -180,7 +180,7 @@ func CommandListener(host string, port int, stats *sync.Map, ctx context.Context
 				continue
 			}
 			_, err = conn.WriteTo(resp, clientAddr)
-			//get -> send json of current stats and reset
+		//get -> send json of current stats and reset
 		case "get":
 			resp, err := statsSyncMapToJson(stats)
 			if err != nil {
